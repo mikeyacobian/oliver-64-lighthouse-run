@@ -1,0 +1,447 @@
+import * as THREE from "three";
+import { createCollectibles } from "./createCollectibles";
+import { createOliver } from "./createOliver";
+import { createSeagulls } from "./createSeagulls";
+import { createWorld } from "./createWorld";
+import { Controls } from "./controls";
+import type { Collectible, GameMode, HudState, Oliver, Seagull, World } from "./types";
+
+type HudCallback = (state: HudState) => void;
+
+const TOTAL_STARS = 5;
+const START_TIME = 180;
+const WORLD_RADIUS = 19.5;
+
+export class Game {
+  private renderer: THREE.WebGLRenderer;
+  private camera = new THREE.PerspectiveCamera(62, 1, 0.1, 100);
+  private clock = new THREE.Clock();
+  private controls = new Controls();
+  private world: World;
+  private oliver: Oliver;
+  private collectibles: Collectible[];
+  private seagulls: Seagull[];
+  private frameId = 0;
+  private resizeObserver: ResizeObserver;
+  private hudAccumulator = 0;
+  private animationTime = 0;
+  private velocityY = 0;
+  private grounded = true;
+  private invulnerableTimer = 0;
+  private barkCooldown = 0;
+  private dustMaterial = new THREE.MeshBasicMaterial({ color: 0xd6b36b, transparent: true, opacity: 0.5 });
+  private sparkleMaterial = new THREE.MeshBasicMaterial({ color: 0xfff4a6, transparent: true, opacity: 0.8 });
+  private pulseMaterial = new THREE.MeshBasicMaterial({
+    color: 0x91dbff,
+    transparent: true,
+    opacity: 0.7,
+    side: THREE.DoubleSide,
+  });
+  private effects: THREE.Mesh[] = [];
+  private state: HudState = this.freshState();
+
+  constructor(
+    private host: HTMLElement,
+    private onHud: HudCallback,
+  ) {
+    this.renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.domElement.className = "game-canvas";
+    this.host.appendChild(this.renderer.domElement);
+
+    this.world = createWorld();
+    this.oliver = createOliver();
+    this.collectibles = createCollectibles(this.world.scene);
+    this.seagulls = createSeagulls(this.world.scene);
+    this.world.scene.add(this.oliver.group);
+
+    this.resizeObserver = new ResizeObserver(() => this.resize());
+    this.resizeObserver.observe(this.host);
+    this.resize();
+    this.restart();
+  }
+
+  start() {
+    this.clock.start();
+    this.loop();
+  }
+
+  restart() {
+    this.state = this.freshState();
+    this.controls.reset();
+    this.animationTime = 0;
+    this.velocityY = 0;
+    this.grounded = true;
+    this.invulnerableTimer = 0;
+    this.barkCooldown = 0;
+    this.oliver.group.position.copy(this.world.spawnPoint);
+    this.oliver.group.rotation.set(0, Math.PI, 0);
+    this.oliver.group.visible = true;
+    this.collectibles.forEach((item) => {
+      item.collected = false;
+      item.group.visible = true;
+      item.group.position.y = item.baseY;
+    });
+    this.seagulls.forEach((gull, index) => {
+      gull.group.position.copy(gull.patrolCenter);
+      gull.velocity.set(0, 0, 0);
+      gull.patrolAngle = index * 1.9;
+      gull.state = "patrol";
+      gull.fleeTimer = 0;
+      gull.bonkCooldown = 0;
+    });
+    this.clearEffects();
+    this.updateFinishRing();
+    this.onHud({ ...this.state });
+  }
+
+  dispose() {
+    cancelAnimationFrame(this.frameId);
+    this.resizeObserver.disconnect();
+    this.controls.dispose();
+    this.clearEffects();
+    this.disposeObject(this.world.scene);
+    this.dustMaterial.dispose();
+    this.sparkleMaterial.dispose();
+    this.pulseMaterial.dispose();
+    this.renderer.dispose();
+    this.renderer.domElement.remove();
+  }
+
+  private loop = () => {
+    const dt = Math.min(this.clock.getDelta(), 0.033);
+    this.update(dt);
+    this.renderer.render(this.world.scene, this.camera);
+    this.frameId = requestAnimationFrame(this.loop);
+  };
+
+  private update(dt: number) {
+    if (this.state.mode === "playing") {
+      this.state.timeLeft -= dt;
+      if (this.state.timeLeft <= 0) {
+        this.state.timeLeft = 0;
+        this.lose("The sun slipped below the horizon before Oliver reached the light.");
+      }
+
+      this.updateOliver(dt);
+      this.updateCollectibles(dt);
+      this.updateSeagulls(dt);
+      this.updateFinish(dt);
+    }
+
+    this.updateEffects(dt);
+    this.updateCamera(dt);
+    this.updateHud(dt);
+  }
+
+  private updateOliver(dt: number) {
+    const c = this.controls.state;
+    const turnSpeed = 2.7;
+    const baseSpeed = 5.1;
+    const canZoom = c.forward && c.sprint && this.state.zoomFuel > 0.02;
+    const zooming = canZoom;
+    const speed = baseSpeed * (zooming ? 1.75 : 1);
+
+    if (c.left) this.oliver.group.rotation.y += turnSpeed * dt;
+    if (c.right) this.oliver.group.rotation.y -= turnSpeed * dt;
+
+    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(this.oliver.group.quaternion);
+    const move = Number(c.forward) - Number(c.backward);
+    if (move !== 0) {
+      this.oliver.group.position.addScaledVector(forward, move * speed * dt);
+    }
+
+    if (zooming) {
+      this.state.zoomFuel = Math.max(0, this.state.zoomFuel - dt * 0.28);
+      this.spawnDust();
+    } else {
+      this.state.zoomFuel = Math.min(1, this.state.zoomFuel + dt * 0.16);
+    }
+
+    if (this.controls.consumeJump() && this.grounded) {
+      this.velocityY = 7.2;
+      this.grounded = false;
+    }
+
+    if (this.controls.consumeBark() && this.barkCooldown <= 0) {
+      this.barkCooldown = 0.95;
+      this.bark();
+    }
+
+    this.velocityY -= 18 * dt;
+    this.oliver.group.position.y += this.velocityY * dt;
+    if (this.oliver.group.position.y <= 0) {
+      this.oliver.group.position.y = 0;
+      this.velocityY = 0;
+      this.grounded = true;
+    }
+
+    this.keepOnIsland(this.oliver.group.position);
+    this.barkCooldown = Math.max(0, this.barkCooldown - dt);
+    this.invulnerableTimer = Math.max(0, this.invulnerableTimer - dt);
+    this.animateOliver(dt, Math.abs(move) > 0.05, zooming);
+  }
+
+  private animateOliver(dt: number, moving: boolean, zooming: boolean) {
+    const rate = moving ? (zooming ? 16 : 9) : 3;
+    this.animationTime += dt * rate;
+    const wave = Math.sin(this.animationTime);
+    const counter = Math.sin(this.animationTime + Math.PI);
+    const stride = moving ? 0.55 : 0.12;
+
+    this.oliver.body.position.y = 0.72 + Math.abs(wave) * (moving ? 0.08 : 0.02);
+    this.oliver.head.position.y = 1.22 + Math.abs(counter) * (moving ? 0.07 : 0.025);
+    this.oliver.bandana.rotation.z = Math.PI / 3 + wave * 0.08;
+
+    this.oliver.legs.forEach((leg, index) => {
+      const phase = index % 2 === 0 ? wave : counter;
+      leg.rotation.x = phase * stride;
+      leg.position.y = 0.36 + Math.max(0, phase) * (moving ? 0.12 : 0.02);
+    });
+
+    this.oliver.ears.forEach((ear, index) => {
+      const side = index === 0 ? -1 : 1;
+      ear.rotation.z = side * (0.28 + wave * (moving ? 0.16 : 0.05));
+      ear.rotation.x = counter * (moving ? 0.18 : 0.04);
+    });
+
+    this.oliver.tail.rotation.z = wave * (zooming ? 0.72 : 0.45);
+    this.oliver.tail.rotation.x = Math.PI / 2.8 + Math.abs(counter) * 0.15;
+  }
+
+  private updateCollectibles(dt: number) {
+    for (const item of this.collectibles) {
+      if (item.collected) continue;
+      item.group.rotation.y += dt * (item.kind === "star" ? 2.6 : 1.6);
+      item.group.position.y = item.baseY + Math.sin(this.animationTime * 0.8 + item.group.position.x) * 0.16;
+
+      if (item.group.position.distanceTo(this.oliver.group.position) < item.radius + 0.6) {
+        item.collected = true;
+        item.group.visible = false;
+        this.state.score += item.kind === "star" ? 100 : 25;
+        if (item.kind === "star") {
+          this.state.stars += 1;
+          this.state.message =
+            this.state.stars === TOTAL_STARS
+              ? "All stars found. The lighthouse ring is glowing!"
+              : "Nantucket Star collected!";
+          this.updateFinishRing();
+        } else {
+          this.state.message = "Beach treasure found. Stylish.";
+        }
+        this.sparkle(item.group.position, item.kind === "star" ? 10 : 5);
+      }
+    }
+  }
+
+  private updateSeagulls(dt: number) {
+    const oliverPos = this.oliver.group.position;
+    for (const gull of this.seagulls) {
+      const toOliver = new THREE.Vector3().subVectors(oliverPos, gull.group.position);
+      const distance = toOliver.length();
+
+      gull.fleeTimer = Math.max(0, gull.fleeTimer - dt);
+      gull.bonkCooldown = Math.max(0, gull.bonkCooldown - dt);
+      if (gull.fleeTimer > 0) {
+        gull.state = "flee";
+      } else if (distance < 6.8) {
+        gull.state = "chase";
+      } else {
+        gull.state = "patrol";
+      }
+
+      if (gull.state === "patrol") {
+        gull.patrolAngle += dt * 0.75;
+        const target = gull.patrolCenter
+          .clone()
+          .add(new THREE.Vector3(Math.cos(gull.patrolAngle) * 2.5, Math.sin(gull.patrolAngle * 2) * 0.25, Math.sin(gull.patrolAngle) * 2.5));
+        gull.velocity.subVectors(target, gull.group.position).multiplyScalar(0.85);
+      } else if (gull.state === "chase") {
+        gull.velocity.copy(toOliver.normalize().multiplyScalar(3.2));
+      } else {
+        gull.velocity.copy(toOliver.normalize().multiplyScalar(-5.2));
+      }
+
+      gull.group.position.addScaledVector(gull.velocity, dt);
+      gull.group.position.y = THREE.MathUtils.clamp(gull.group.position.y, 1.05, 2.7);
+      this.keepOnIsland(gull.group.position, 17);
+      gull.group.lookAt(oliverPos.x, gull.group.position.y, oliverPos.z);
+      gull.wings.forEach((wing, index) => {
+        const side = index === 0 ? -1 : 1;
+        wing.rotation.z = side * (0.24 + Math.sin(this.animationTime * 1.8) * 0.45);
+      });
+
+      if (distance < 1.05 && gull.bonkCooldown <= 0 && this.invulnerableTimer <= 0) {
+        gull.bonkCooldown = 1.4;
+        this.bonkOliver(gull);
+      }
+    }
+  }
+
+  private updateFinish(dt: number) {
+    this.world.finishRing.rotation.z += dt * (this.state.stars === TOTAL_STARS ? 2.4 : 0.8);
+    if (this.state.stars === TOTAL_STARS && this.world.finishRing.position.distanceTo(this.oliver.group.position) < 1.7) {
+      this.state.mode = "won";
+      this.state.score += Math.ceil(this.state.timeLeft) * 3;
+      this.state.message = "Oliver reached the glowing lighthouse ring before sunset.";
+    }
+  }
+
+  private updateFinishRing() {
+    const active = this.state.stars === TOTAL_STARS;
+    const material = this.world.finishRing.material as THREE.MeshStandardMaterial;
+    material.emissiveIntensity = active ? 1.4 : 0.08;
+    material.emissive.set(active ? 0xffd95c : 0x2f1b00);
+    this.world.finishGlow.intensity = active ? 2.6 : 0.15;
+  }
+
+  private bark() {
+    const pulse = new THREE.Mesh(new THREE.TorusGeometry(0.6, 0.035, 8, 28), this.pulseMaterial);
+    pulse.position.copy(this.oliver.group.position).add(new THREE.Vector3(0, 0.42, 0));
+    pulse.rotation.x = Math.PI / 2;
+    pulse.userData.life = 0.45;
+    pulse.userData.maxLife = 0.45;
+    this.world.scene.add(pulse);
+    this.effects.push(pulse);
+    this.state.message = "Bark! Nearby seagulls scatter.";
+
+    for (const gull of this.seagulls) {
+      const distance = gull.group.position.distanceTo(this.oliver.group.position);
+      if (distance < 6.2) {
+        const away = gull.group.position.clone().sub(this.oliver.group.position).normalize();
+        gull.group.position.addScaledVector(away, 0.6);
+        gull.fleeTimer = 2.6;
+        gull.state = "flee";
+      }
+    }
+  }
+
+  private bonkOliver(gull: Seagull) {
+    this.state.lives -= 1;
+    this.invulnerableTimer = 1.2;
+    const away = this.oliver.group.position.clone().sub(gull.group.position).normalize();
+    this.oliver.group.position.addScaledVector(away, 1.15);
+    this.state.message = this.state.lives > 0 ? "Bonked by a seagull. Bark to scare them off!" : "Oliver ran out of lives.";
+    if (this.state.lives <= 0) this.lose("Oliver was bonked one too many times by the Nantucket gull squad.");
+  }
+
+  private lose(message: string) {
+    this.state.mode = "lost";
+    this.state.message = message;
+  }
+
+  private updateCamera(dt: number) {
+    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(this.oliver.group.quaternion);
+    const zooming = this.controls.state.forward && this.controls.state.sprint && this.state.zoomFuel > 0.02;
+    const target = this.oliver.group.position
+      .clone()
+      .addScaledVector(forward, zooming ? -7.6 : -6.4)
+      .add(new THREE.Vector3(0, zooming ? 4.1 : 3.45, 0));
+    this.camera.position.lerp(target, 1 - Math.pow(0.001, dt));
+    const lookAt = this.oliver.group.position.clone().add(new THREE.Vector3(0, 1.0, 0)).addScaledVector(forward, 1.6);
+    this.camera.lookAt(lookAt);
+    this.camera.fov = THREE.MathUtils.lerp(this.camera.fov, zooming ? 70 : 62, 1 - Math.pow(0.01, dt));
+    this.camera.updateProjectionMatrix();
+  }
+
+  private updateEffects(dt: number) {
+    for (let i = this.effects.length - 1; i >= 0; i--) {
+      const effect = this.effects[i];
+      effect.userData.life -= dt;
+      const life = effect.userData.life as number;
+      const maxLife = effect.userData.maxLife as number;
+      const t = Math.max(0, life / maxLife);
+      effect.scale.multiplyScalar(1 + dt * 2.8);
+      const material = effect.material as THREE.MeshBasicMaterial;
+      material.opacity = Math.min(material.opacity, t);
+      effect.position.y += dt * 0.4;
+      if (life <= 0) {
+        this.world.scene.remove(effect);
+        effect.geometry.dispose();
+        this.effects.splice(i, 1);
+      }
+    }
+  }
+
+  private updateHud(dt: number) {
+    this.hudAccumulator += dt;
+    if (this.hudAccumulator >= 0.1 || this.state.mode !== "playing") {
+      this.hudAccumulator = 0;
+      this.onHud({ ...this.state });
+    }
+  }
+
+  private spawnDust() {
+    if (Math.random() > 0.45) return;
+    const puff = new THREE.Mesh(new THREE.DodecahedronGeometry(0.12, 0), this.dustMaterial);
+    const backward = new THREE.Vector3(0, 0, 1).applyQuaternion(this.oliver.group.quaternion);
+    puff.position.copy(this.oliver.group.position).addScaledVector(backward, 0.72);
+    puff.position.y = 0.12;
+    puff.userData.life = 0.45;
+    puff.userData.maxLife = 0.45;
+    this.world.scene.add(puff);
+    this.effects.push(puff);
+  }
+
+  private sparkle(position: THREE.Vector3, count: number) {
+    for (let i = 0; i < count; i++) {
+      const sparkle = new THREE.Mesh(new THREE.TetrahedronGeometry(0.09, 0), this.sparkleMaterial);
+      sparkle.position.copy(position);
+      sparkle.position.add(new THREE.Vector3((Math.random() - 0.5) * 0.7, (Math.random() - 0.5) * 0.4, (Math.random() - 0.5) * 0.7));
+      sparkle.userData.life = 0.55 + Math.random() * 0.25;
+      sparkle.userData.maxLife = sparkle.userData.life;
+      this.world.scene.add(sparkle);
+      this.effects.push(sparkle);
+    }
+  }
+
+  private keepOnIsland(position: THREE.Vector3, radius = WORLD_RADIUS) {
+    const flat = new THREE.Vector2(position.x, position.z);
+    if (flat.length() > radius) {
+      flat.setLength(radius);
+      position.x = flat.x;
+      position.z = flat.y;
+    }
+  }
+
+  private resize() {
+    const width = Math.max(1, this.host.clientWidth);
+    const height = Math.max(1, this.host.clientHeight);
+    this.renderer.setSize(width, height, false);
+    this.camera.aspect = width / height;
+    this.camera.updateProjectionMatrix();
+  }
+
+  private clearEffects() {
+    for (const effect of this.effects) {
+      this.world.scene.remove(effect);
+      effect.geometry.dispose();
+    }
+    this.effects = [];
+  }
+
+  private disposeObject(object: THREE.Object3D) {
+    object.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        child.geometry.dispose();
+        const materials = Array.isArray(child.material) ? child.material : [child.material];
+        materials.forEach((material) => material.dispose());
+      }
+    });
+  }
+
+  private freshState(): HudState {
+    return {
+      score: 0,
+      stars: 0,
+      totalStars: TOTAL_STARS,
+      lives: 3,
+      timeLeft: START_TIME,
+      zoomFuel: 1,
+      message: "Collect 5 Nantucket Stars, then reach the lighthouse ring.",
+      mode: "playing",
+    };
+  }
+}
