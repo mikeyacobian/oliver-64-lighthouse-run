@@ -13,6 +13,12 @@ const difficultyLabels: Record<Difficulty, string> = {
   hard: "Storm Watch",
 };
 
+const weatherLabels = {
+  clear: "Clear",
+  mist: "Mist",
+  drizzle: "Drizzle",
+};
+
 export function HUD({ state, onRestart, onStart, onDifficultyChange }: HUDProps) {
   const time = Math.max(0, Math.ceil(state.timeLeft));
   const zoomPercent = Math.round(state.zoomFuel * 100);
@@ -47,6 +53,8 @@ export function HUD({ state, onRestart, onStart, onDifficultyChange }: HUDProps)
       <div className="hud__readiness">
         <Status label="Bark" active={state.barkReady} activeText="Ready" inactiveText="Cooling" />
         <Status label="Ring" active={state.ringReady} activeText="Glowing" inactiveText="Dim" />
+        <Status label="Weather" active={state.weather === "clear"} activeText={weatherLabels[state.weather]} inactiveText={weatherLabels[state.weather]} />
+        <Status label="Time" active={state.dayPhase === "Day"} activeText={state.dayPhase} inactiveText={state.dayPhase} />
       </div>
 
       <p className={`hud__message hud__message--${state.mode}`}>{state.message}</p>
@@ -61,6 +69,7 @@ export function HUD({ state, onRestart, onStart, onDifficultyChange }: HUDProps)
               <span>Space: jump</span>
               <span>B: bark</span>
               <span>Shift / Z: zoomies</span>
+              <span>P / Esc: pause</span>
             </div>
             <div className="hud__difficulty" aria-label="Difficulty">
               {(Object.keys(difficultyLabels) as Difficulty[]).map((difficulty) => (
@@ -76,6 +85,18 @@ export function HUD({ state, onRestart, onStart, onDifficultyChange }: HUDProps)
             </div>
             <button type="button" onClick={onStart}>
               Start Run
+            </button>
+          </div>
+        </div>
+      )}
+
+      {state.mode === "paused" && (
+        <div className="hud__overlay">
+          <div className="hud__result">
+            <h1>Paused</h1>
+            <p>{state.message}</p>
+            <button type="button" onClick={onStart}>
+              Resume Run
             </button>
           </div>
         </div>

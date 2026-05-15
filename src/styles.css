@@ -240,6 +240,10 @@ button {
   background: rgba(29, 79, 111, 0.78);
 }
 
+.hud__message--paused {
+  background: rgba(67, 58, 90, 0.82);
+}
+
 .hud__message--won {
   background: rgba(34, 104, 68, 0.82);
 }

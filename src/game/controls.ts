@@ -7,6 +7,7 @@ const initialControls = (): ControlsState => ({
   right: false,
   jump: false,
   bark: false,
+  pause: false,
   sprint: false,
 });
 
@@ -38,6 +39,12 @@ export class Controls {
     return value;
   }
 
+  consumePause() {
+    const value = this.state.pause;
+    this.state.pause = false;
+    return value;
+  }
+
   dispose() {
     window.removeEventListener("keydown", this.onKeyDown);
     window.removeEventListener("keyup", this.onKeyUp);
@@ -47,7 +54,7 @@ export class Controls {
     const code = event.code.toLowerCase();
     const key = event.key.toLowerCase();
 
-    if (["space", "arrowup", "arrowdown", "arrowleft", "arrowright"].includes(code)) {
+    if (["space", "arrowup", "arrowdown", "arrowleft", "arrowright", "escape"].includes(code)) {
       event.preventDefault();
     }
 
@@ -64,9 +71,11 @@ export class Controls {
     if (code === "keyd" || code === "arrowright") this.state.right = isDown;
     if (code === "space" && isDown) this.state.jump = true;
     if (code === "keyb" && isDown) this.state.bark = true;
+    if ((code === "keyp" || code === "escape") && isDown) this.state.pause = true;
     if (code === "shiftleft" || code === "shiftright" || code === "keyz") this.state.sprint = isDown;
 
     if (key === "b" && isDown) this.state.bark = true;
+    if (key === "p" && isDown) this.state.pause = true;
     if (key === "z") this.state.sprint = isDown;
   }
 }

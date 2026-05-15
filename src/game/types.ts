@@ -1,7 +1,9 @@
 import type * as THREE from "three";
 
-export type GameMode = "ready" | "playing" | "won" | "lost";
+export type GameMode = "ready" | "playing" | "paused" | "won" | "lost";
 export type Difficulty = "easy" | "normal" | "hard";
+export type Weather = "clear" | "mist" | "drizzle";
+export type DayPhase = "Dawn" | "Day" | "Sunset" | "Night";
 
 export type HudState = {
   score: number;
@@ -13,6 +15,8 @@ export type HudState = {
   barkReady: boolean;
   ringReady: boolean;
   difficulty: Difficulty;
+  weather: Weather;
+  dayPhase: DayPhase;
   message: string;
   mode: GameMode;
 };
@@ -24,6 +28,7 @@ export type ControlsState = {
   right: boolean;
   jump: boolean;
   bark: boolean;
+  pause: boolean;
   sprint: boolean;
 };
 
@@ -72,6 +77,8 @@ export type Crab = {
 
 export type World = {
   scene: THREE.Scene;
+  sun: THREE.DirectionalLight;
+  ambient: THREE.HemisphereLight;
   lighthouse: THREE.Group;
   finishRing: THREE.Mesh;
   finishGlow: THREE.PointLight;

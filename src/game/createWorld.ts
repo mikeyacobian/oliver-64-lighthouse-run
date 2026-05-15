@@ -147,6 +147,8 @@ export function createWorld(): World {
 
   return {
     scene,
+    sun,
+    ambient,
     lighthouse,
     finishRing,
     finishGlow,

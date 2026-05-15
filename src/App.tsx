@@ -13,6 +13,8 @@ const initialHud: HudState = {
   barkReady: true,
   ringReady: false,
   difficulty: "normal",
+  weather: "clear",
+  dayPhase: "Sunset",
   message: "Collect 5 Nantucket Stars, then reach the lighthouse ring.",
   mode: "ready",
 };

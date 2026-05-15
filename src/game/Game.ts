@@ -5,13 +5,15 @@ import { createOliver } from "./createOliver";
 import { createSeagulls } from "./createSeagulls";
 import { createWorld } from "./createWorld";
 import { Controls } from "./controls";
-import type { Collectible, Crab, Difficulty, GameMode, HudState, Oliver, Seagull, World } from "./types";
+import type { Collectible, Crab, DayPhase, Difficulty, GameMode, HudState, Oliver, Seagull, Weather, World } from "./types";
 
 type HudCallback = (state: HudState) => void;
 
 const TOTAL_STARS = 5;
 const START_TIME = 180;
 const WORLD_RADIUS = 19.5;
+const DAY_LENGTH = 150;
+const RAIN_COUNT = 180;
 const DIFFICULTY_CONFIG: Record<
   Difficulty,
   {
@@ -63,6 +65,12 @@ export class Game {
   private grounded = true;
   private invulnerableTimer = 0;
   private barkCooldown = 0;
+  private atmosphereTime = 0;
+  private weatherTimer = 18;
+  private weatherIndex = 0;
+  private weatherSequence: Weather[] = ["clear", "mist", "clear", "drizzle", "mist"];
+  private rain!: THREE.Points;
+  private rainPositions!: Float32Array;
   private dustMaterial = new THREE.MeshBasicMaterial({ color: 0xd6b36b, transparent: true, opacity: 0.5 });
   private sparkleMaterial = new THREE.MeshBasicMaterial({ color: 0xfff4a6, transparent: true, opacity: 0.8 });
   private featherMaterials = [
@@ -95,6 +103,10 @@ export class Game {
     this.collectibles = createCollectibles(this.world.scene);
     this.crabs = createCrabs(this.world.scene);
     this.seagulls = createSeagulls(this.world.scene);
+    const rainField = this.createRainField();
+    this.rain = rainField.rain;
+    this.rainPositions = rainField.positions;
+    this.world.scene.add(this.rain);
     this.world.scene.add(this.oliver.group);
 
     this.resizeObserver = new ResizeObserver(() => this.resize());
@@ -109,6 +121,13 @@ export class Game {
   }
 
   startRun() {
+    if (this.state.mode === "paused") {
+      this.state.mode = "playing";
+      this.state.message = "Back to the beach. Keep moving!";
+      this.onHud({ ...this.state });
+      return;
+    }
+
     if (this.state.mode !== "ready") return;
     this.state.mode = "playing";
     this.state.message = "Find the 5 Nantucket Stars. Jump over crabs on the beach!";
@@ -131,6 +150,9 @@ export class Game {
     this.grounded = true;
     this.invulnerableTimer = 0;
     this.barkCooldown = 0;
+    this.atmosphereTime = 0;
+    this.weatherTimer = 18;
+    this.weatherIndex = 0;
     this.oliver.group.position.copy(this.world.spawnPoint);
     this.oliver.group.rotation.set(0, Math.PI, 0);
     this.oliver.group.visible = true;
@@ -158,6 +180,7 @@ export class Game {
     });
     this.clearEffects();
     this.updateFinishRing();
+    this.updateAtmosphere(0);
     this.onHud({ ...this.state });
   }
 
@@ -183,6 +206,10 @@ export class Game {
   };
 
   private update(dt: number) {
+    if (this.controls.consumePause()) {
+      this.togglePause();
+    }
+
     if (this.state.mode === "playing") {
       this.state.timeLeft -= dt;
       if (this.state.timeLeft <= 0) {
@@ -195,14 +222,33 @@ export class Game {
       this.updateCrabs(dt);
       this.updateSeagulls(dt);
       this.updateFinish(dt);
+      this.updateAtmosphere(dt);
     } else if (this.state.mode === "ready") {
       this.animateOliver(dt, false, false);
       this.updateAttractAnimations(dt);
+      this.updateAtmosphere(dt);
+    } else if (this.state.mode === "won" || this.state.mode === "lost") {
+      this.updateAtmosphere(dt * 0.35);
     }
 
     this.updateEffects(dt);
     this.updateCamera(dt);
     this.updateHud(dt);
+  }
+
+  private togglePause() {
+    if (this.state.mode === "playing") {
+      this.state.mode = "paused";
+      this.state.message = "Paused. Press P or Escape to keep running.";
+      this.onHud({ ...this.state });
+      return;
+    }
+
+    if (this.state.mode === "paused") {
+      this.state.mode = "playing";
+      this.state.message = "Back to the beach. Keep moving!";
+      this.onHud({ ...this.state });
+    }
   }
 
   private updateOliver(dt: number) {
@@ -550,6 +596,93 @@ export class Game {
     this.camera.updateProjectionMatrix();
   }
 
+  private updateAtmosphere(dt: number) {
+    this.atmosphereTime = (this.atmosphereTime + dt) % DAY_LENGTH;
+    this.weatherTimer -= dt;
+    if (this.weatherTimer <= 0) {
+      this.weatherIndex = (this.weatherIndex + 1) % this.weatherSequence.length;
+      this.state.weather = this.weatherSequence[this.weatherIndex];
+      this.weatherTimer = this.state.weather === "drizzle" ? 18 : 24;
+    }
+
+    const cycle = this.atmosphereTime / DAY_LENGTH;
+    const daylight = Math.max(0, Math.sin(cycle * Math.PI * 2));
+    const sunset = Math.max(0, Math.sin(cycle * Math.PI * 2 + Math.PI * 0.45));
+    const night = 1 - daylight;
+    this.state.dayPhase = this.dayPhase(cycle);
+
+    const nightSky = new THREE.Color(0x17213c);
+    const daySky = new THREE.Color(0x83c7e8);
+    const sunsetSky = new THREE.Color(0xffa15f);
+    const sky = nightSky.clone().lerp(daySky, daylight).lerp(sunsetSky, sunset * 0.42);
+    const fog = sky.clone().lerp(new THREE.Color(0xb8c3c4), this.state.weather === "mist" ? 0.35 : 0.08);
+    this.world.scene.background = sky;
+    if (this.world.scene.fog instanceof THREE.Fog) {
+      this.world.scene.fog.color.copy(fog);
+      this.world.scene.fog.near = this.state.weather === "mist" ? 10 : this.state.weather === "drizzle" ? 15 : 24;
+      this.world.scene.fog.far = this.state.weather === "mist" ? 36 : this.state.weather === "drizzle" ? 45 : 62;
+    }
+
+    const weatherDim = this.state.weather === "clear" ? 1 : this.state.weather === "mist" ? 0.78 : 0.68;
+    this.world.sun.intensity = (0.7 + daylight * 1.75 + sunset * 0.55) * weatherDim;
+    this.world.ambient.intensity = (0.72 + daylight * 0.72 + night * 0.22) * weatherDim;
+    this.world.sun.color.set(sunset > 0.45 ? 0xffd0a0 : daylight > 0.35 ? 0xfff2c7 : 0x8fa8d8);
+    this.world.ambient.color.set(daylight > 0.4 ? 0x87c8ff : 0x3d527e);
+    this.world.ambient.groundColor.set(sunset > 0.35 ? 0xd7ad6f : 0x7d8a6c);
+    this.world.sun.position.set(Math.cos(cycle * Math.PI * 2) * 10, 5 + daylight * 9, Math.sin(cycle * Math.PI * 2) * 8);
+
+    this.updateRain(dt);
+  }
+
+  private updateRain(dt: number) {
+    this.rain.visible = this.state.weather === "drizzle";
+    if (!this.rain.visible) return;
+
+    const positions = this.rainPositions;
+    for (let i = 0; i < RAIN_COUNT; i++) {
+      const offset = i * 3;
+      positions[offset] += dt * 1.4;
+      positions[offset + 1] -= dt * 9.5;
+      positions[offset + 2] += dt * 0.5;
+      if (positions[offset + 1] < 0.35) {
+        positions[offset] = (Math.random() - 0.5) * 34;
+        positions[offset + 1] = 7 + Math.random() * 7;
+        positions[offset + 2] = (Math.random() - 0.5) * 34;
+      }
+    }
+    const position = this.rain.geometry.getAttribute("position") as THREE.BufferAttribute;
+    position.needsUpdate = true;
+  }
+
+  private createRainField() {
+    const positions = new Float32Array(RAIN_COUNT * 3);
+    for (let i = 0; i < RAIN_COUNT; i++) {
+      const offset = i * 3;
+      positions[offset] = (Math.random() - 0.5) * 34;
+      positions[offset + 1] = 1 + Math.random() * 12;
+      positions[offset + 2] = (Math.random() - 0.5) * 34;
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    const material = new THREE.PointsMaterial({
+      color: 0xb7d7ff,
+      size: 0.09,
+      transparent: true,
+      opacity: 0.72,
+      depthWrite: false,
+    });
+    const rain = new THREE.Points(geometry, material);
+    rain.visible = false;
+    return { rain, positions };
+  }
+
+  private dayPhase(cycle: number): DayPhase {
+    if (cycle < 0.18) return "Dawn";
+    if (cycle < 0.58) return "Day";
+    if (cycle < 0.74) return "Sunset";
+    return "Night";
+  }
+
   private updateEffects(dt: number) {
     for (let i = this.effects.length - 1; i >= 0; i--) {
       const effect = this.effects[i];
@@ -585,7 +718,7 @@ export class Game {
 
   private updateHud(dt: number) {
     this.hudAccumulator += dt;
-    if (this.hudAccumulator >= 0.1 || this.state.mode !== "playing") {
+    if (this.hudAccumulator >= 0.1) {
       this.hudAccumulator = 0;
       this.state.barkReady = this.barkCooldown <= 0;
       this.state.ringReady = this.state.stars === TOTAL_STARS;
@@ -677,7 +810,7 @@ export class Game {
 
   private disposeObject(object: THREE.Object3D) {
     object.traverse((child) => {
-      if (child instanceof THREE.Mesh) {
+      if (child instanceof THREE.Mesh || child instanceof THREE.Points) {
         child.geometry.dispose();
         const materials = Array.isArray(child.material) ? child.material : [child.material];
         materials.forEach((material) => material.dispose());
@@ -696,6 +829,8 @@ export class Game {
       barkReady: true,
       ringReady: false,
       difficulty: this.state?.difficulty ?? "normal",
+      weather: "clear",
+      dayPhase: "Dawn",
       message: "Collect 5 Nantucket Stars, then reach the lighthouse ring.",
       mode: "ready",
     };
