@@ -43,7 +43,7 @@ export type Collectible = {
   baseY: number;
 };
 
-export type SeagullState = "patrol" | "chase" | "flee";
+export type SeagullState = "patrol" | "chase" | "flee" | "respawn";
 
 export type Seagull = {
   group: THREE.Group;
@@ -54,6 +54,7 @@ export type Seagull = {
   state: SeagullState;
   fleeTimer: number;
   bonkCooldown: number;
+  respawnTimer: number;
 };
 
 export type World = {

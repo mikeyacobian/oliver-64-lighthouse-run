@@ -48,6 +48,7 @@ export function createSeagulls(scene: THREE.Scene): Seagull[] {
       state: "patrol",
       fleeTimer: 0,
       bonkCooldown: 0,
+      respawnTimer: 0,
     };
   });
 }

@@ -31,6 +31,11 @@ export class Game {
   private barkCooldown = 0;
   private dustMaterial = new THREE.MeshBasicMaterial({ color: 0xd6b36b, transparent: true, opacity: 0.5 });
   private sparkleMaterial = new THREE.MeshBasicMaterial({ color: 0xfff4a6, transparent: true, opacity: 0.8 });
+  private featherMaterials = [
+    new THREE.MeshBasicMaterial({ color: 0xf8f3df, transparent: true, opacity: 0.95 }),
+    new THREE.MeshBasicMaterial({ color: 0xd8dde0, transparent: true, opacity: 0.95 }),
+    new THREE.MeshBasicMaterial({ color: 0x3a3f42, transparent: true, opacity: 0.95 }),
+  ];
   private pulseMaterial = new THREE.MeshBasicMaterial({
     color: 0x91dbff,
     transparent: true,
@@ -98,6 +103,8 @@ export class Game {
       gull.state = "patrol";
       gull.fleeTimer = 0;
       gull.bonkCooldown = 0;
+      gull.respawnTimer = 0;
+      gull.group.visible = true;
     });
     this.clearEffects();
     this.updateFinishRing();
@@ -112,6 +119,7 @@ export class Game {
     this.disposeObject(this.world.scene);
     this.dustMaterial.dispose();
     this.sparkleMaterial.dispose();
+    this.featherMaterials.forEach((material) => material.dispose());
     this.pulseMaterial.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
@@ -264,6 +272,11 @@ export class Game {
   private updateSeagulls(dt: number) {
     const oliverPos = this.oliver.group.position;
     for (const gull of this.seagulls) {
+      if (gull.state === "respawn") {
+        this.updateRespawningGull(gull, dt);
+        continue;
+      }
+
       const toOliver = new THREE.Vector3().subVectors(oliverPos, gull.group.position);
       const distance = toOliver.length();
 
@@ -334,6 +347,7 @@ export class Game {
     this.state.message = "Bark! Nearby seagulls scatter.";
 
     for (const gull of this.seagulls) {
+      if (gull.state === "respawn") continue;
       const distance = gull.group.position.distanceTo(this.oliver.group.position);
       if (distance < 6.2) {
         const away = gull.group.position.clone().sub(this.oliver.group.position).normalize();
@@ -349,8 +363,51 @@ export class Game {
     this.invulnerableTimer = 1.2;
     const away = this.flatDirection(this.oliver.group.position, gull.group.position);
     this.oliver.group.position.addScaledVector(away, 1.15);
+    this.spawnFeathers(gull.group.position);
+    this.queueReplacementGull(gull);
     this.state.message = this.state.lives > 0 ? "Bonked by a seagull. Bark to scare them off!" : "Oliver ran out of lives.";
     if (this.state.lives <= 0) this.lose("Oliver was bonked one too many times by the Nantucket gull squad.");
+  }
+
+  private updateRespawningGull(gull: Seagull, dt: number) {
+    gull.respawnTimer = Math.max(0, gull.respawnTimer - dt);
+    gull.bonkCooldown = Math.max(0, gull.bonkCooldown - dt);
+
+    if (gull.respawnTimer > 1.15) {
+      gull.group.visible = false;
+      return;
+    }
+
+    gull.group.visible = true;
+    const toHome = gull.patrolCenter.clone().sub(gull.group.position);
+    if (toHome.length() > 0.35) {
+      gull.velocity.copy(toHome.normalize().multiplyScalar(4.8));
+      gull.group.position.addScaledVector(gull.velocity, dt);
+      gull.group.position.y = THREE.MathUtils.lerp(gull.group.position.y, gull.patrolCenter.y, 1 - Math.pow(0.01, dt));
+      gull.group.lookAt(gull.patrolCenter.x, gull.group.position.y, gull.patrolCenter.z);
+      gull.wings.forEach((wing, index) => {
+        const side = index === 0 ? -1 : 1;
+        wing.rotation.z = side * (0.32 + Math.sin(this.animationTime * 2.4) * 0.55);
+      });
+      return;
+    }
+
+    gull.group.position.copy(gull.patrolCenter);
+    gull.velocity.set(0, 0, 0);
+    gull.fleeTimer = 0;
+    gull.state = "patrol";
+    gull.bonkCooldown = 0.85;
+  }
+
+  private queueReplacementGull(gull: Seagull) {
+    const angle = Math.atan2(gull.patrolCenter.z, gull.patrolCenter.x) + Math.PI + (Math.random() - 0.5) * 0.8;
+    gull.group.position.set(Math.cos(angle) * 20.5, 2.4, Math.sin(angle) * 20.5);
+    gull.velocity.set(0, 0, 0);
+    gull.state = "respawn";
+    gull.fleeTimer = 0;
+    gull.bonkCooldown = 2.2;
+    gull.respawnTimer = 2.2;
+    gull.group.visible = false;
   }
 
   private lose(message: string) {
@@ -379,6 +436,17 @@ export class Game {
       const life = effect.userData.life as number;
       const maxLife = effect.userData.maxLife as number;
       const t = Math.max(0, life / maxLife);
+      const velocity = effect.userData.velocity as THREE.Vector3 | undefined;
+      const spin = effect.userData.spin as THREE.Vector3 | undefined;
+      if (velocity) {
+        velocity.y -= 6.5 * dt;
+        effect.position.addScaledVector(velocity, dt);
+      }
+      if (spin) {
+        effect.rotation.x += spin.x * dt;
+        effect.rotation.y += spin.y * dt;
+        effect.rotation.z += spin.z * dt;
+      }
       effect.scale.multiplyScalar(1 + dt * 2.8);
       const material = effect.material as THREE.MeshBasicMaterial;
       material.opacity = Math.min(material.opacity, t);
@@ -386,6 +454,9 @@ export class Game {
       if (life <= 0) {
         this.world.scene.remove(effect);
         effect.geometry.dispose();
+        if (effect.userData.disposeMaterial) {
+          material.dispose();
+        }
         this.effects.splice(i, 1);
       }
     }
@@ -411,6 +482,23 @@ export class Game {
     puff.userData.maxLife = 0.45;
     this.world.scene.add(puff);
     this.effects.push(puff);
+  }
+
+  private spawnFeathers(position: THREE.Vector3) {
+    for (let i = 0; i < 18; i++) {
+      const material = this.featherMaterials[i % this.featherMaterials.length].clone();
+      const feather = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.02, 0.34), material);
+      feather.position.copy(position);
+      feather.position.y = Math.max(0.7, position.y);
+      feather.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
+      feather.userData.life = 0.75 + Math.random() * 0.45;
+      feather.userData.maxLife = feather.userData.life;
+      feather.userData.disposeMaterial = true;
+      feather.userData.velocity = new THREE.Vector3((Math.random() - 0.5) * 5.2, 2.2 + Math.random() * 3.2, (Math.random() - 0.5) * 5.2);
+      feather.userData.spin = new THREE.Vector3((Math.random() - 0.5) * 9, (Math.random() - 0.5) * 9, (Math.random() - 0.5) * 9);
+      this.world.scene.add(feather);
+      this.effects.push(feather);
+    }
   }
 
   private sparkle(position: THREE.Vector3, count: number) {
@@ -458,6 +546,10 @@ export class Game {
     for (const effect of this.effects) {
       this.world.scene.remove(effect);
       effect.geometry.dispose();
+      if (effect.userData.disposeMaterial) {
+        const material = effect.material as THREE.Material;
+        material.dispose();
+      }
     }
     this.effects = [];
   }
