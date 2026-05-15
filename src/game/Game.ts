@@ -1,10 +1,11 @@
 import * as THREE from "three";
 import { createCollectibles } from "./createCollectibles";
+import { createCrabs } from "./createCrabs";
 import { createOliver } from "./createOliver";
 import { createSeagulls } from "./createSeagulls";
 import { createWorld } from "./createWorld";
 import { Controls } from "./controls";
-import type { Collectible, GameMode, HudState, Oliver, Seagull, World } from "./types";
+import type { Collectible, Crab, GameMode, HudState, Oliver, Seagull, World } from "./types";
 
 type HudCallback = (state: HudState) => void;
 
@@ -20,6 +21,7 @@ export class Game {
   private world: World;
   private oliver: Oliver;
   private collectibles: Collectible[];
+  private crabs: Crab[];
   private seagulls: Seagull[];
   private frameId = 0;
   private resizeObserver: ResizeObserver;
@@ -59,6 +61,7 @@ export class Game {
     this.world = createWorld();
     this.oliver = createOliver();
     this.collectibles = createCollectibles(this.world.scene);
+    this.crabs = createCrabs(this.world.scene);
     this.seagulls = createSeagulls(this.world.scene);
     this.world.scene.add(this.oliver.group);
 
@@ -76,7 +79,7 @@ export class Game {
   startRun() {
     if (this.state.mode !== "ready") return;
     this.state.mode = "playing";
-    this.state.message = "Find the 5 Nantucket Stars before sunset.";
+    this.state.message = "Find the 5 Nantucket Stars. Jump over crabs on the beach!";
     this.onHud({ ...this.state });
   }
 
@@ -95,6 +98,12 @@ export class Game {
       item.collected = false;
       item.group.visible = true;
       item.group.position.y = item.baseY;
+    });
+    this.crabs.forEach((crab, index) => {
+      crab.group.position.copy(crab.start.clone().lerp(crab.end, index % 2 === 0 ? 0.15 : 0.7));
+      crab.direction = index % 2 === 0 ? 1 : -1;
+      crab.pinchCooldown = 0;
+      crab.group.visible = true;
     });
     this.seagulls.forEach((gull, index) => {
       const angle = index * 1.9;
@@ -143,6 +152,7 @@ export class Game {
 
       this.updateOliver(dt);
       this.updateCollectibles(dt);
+      this.updateCrabs(dt);
       this.updateSeagulls(dt);
       this.updateFinish(dt);
     } else if (this.state.mode === "ready") {
@@ -267,6 +277,55 @@ export class Game {
       gull.group.position.y = THREE.MathUtils.clamp(gull.group.position.y, 1.05, 2.7);
       this.animateGullWings(gull, 0.32);
     }
+
+    for (const crab of this.crabs) {
+      this.animateCrab(crab, dt, 0.5);
+    }
+  }
+
+  private updateCrabs(dt: number) {
+    for (const crab of this.crabs) {
+      const target = crab.direction === 1 ? crab.end : crab.start;
+      const toTarget = target.clone().sub(crab.group.position);
+      if (toTarget.length() < 0.18) {
+        crab.direction *= -1;
+      }
+
+      const nextTarget = crab.direction === 1 ? crab.end : crab.start;
+      crab.group.position.addScaledVector(nextTarget.clone().sub(crab.group.position).normalize(), crab.speed * dt);
+      crab.group.lookAt(nextTarget.x, crab.group.position.y, nextTarget.z);
+      crab.pinchCooldown = Math.max(0, crab.pinchCooldown - dt);
+      this.animateCrab(crab, dt, 1);
+
+      const canPinch = this.grounded && this.oliver.group.position.y < 0.42;
+      if (canPinch && this.flatDistance(crab.group.position, this.oliver.group.position) < 0.72 && crab.pinchCooldown <= 0 && this.invulnerableTimer <= 0) {
+        crab.pinchCooldown = 1.25;
+        this.pinchOliver(crab);
+      }
+    }
+  }
+
+  private animateCrab(crab: Crab, dt: number, intensity: number) {
+    const scuttle = Math.sin(this.animationTime * 1.7 + crab.group.position.x) * intensity;
+    crab.legs.forEach((leg, index) => {
+      const side = index % 2 === 0 ? 1 : -1;
+      leg.rotation.y = side * scuttle * 0.36;
+    });
+    crab.claws.forEach((claw, index) => {
+      const side = index === 0 ? -1 : 1;
+      claw.rotation.z = side * (0.28 + Math.abs(scuttle) * 0.34);
+    });
+    crab.group.position.y = 0.16 + Math.abs(scuttle) * 0.025;
+  }
+
+  private pinchOliver(crab: Crab) {
+    this.state.lives -= 1;
+    this.invulnerableTimer = 1;
+    const away = this.flatDirection(this.oliver.group.position, crab.group.position);
+    this.oliver.group.position.addScaledVector(away, 0.95);
+    this.sparkle(crab.group.position.clone().add(new THREE.Vector3(0, 0.25, 0)), 6);
+    this.state.message = this.state.lives > 0 ? "Pinched by a crab. Jump over them!" : "Oliver got pinched one too many times.";
+    if (this.state.lives <= 0) this.lose("Oliver ran out of lives on the crabby shoreline.");
   }
 
   private updateSeagulls(dt: number) {

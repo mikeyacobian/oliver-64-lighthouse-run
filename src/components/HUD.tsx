@@ -47,7 +47,7 @@ export function HUD({ state, onRestart, onStart }: HUDProps) {
         <div className="hud__overlay">
           <div className="hud__result hud__result--wide">
             <h1>Oliver 64: Lighthouse Run</h1>
-            <p>Collect 5 Nantucket Stars, bark at gulls, then sprint for the glowing lighthouse ring.</p>
+            <p>Collect 5 Nantucket Stars, jump over crabs, bark at gulls, then sprint for the glowing lighthouse ring.</p>
             <div className="hud__controls">
               <span>WASD / Arrows: move</span>
               <span>Space: jump</span>

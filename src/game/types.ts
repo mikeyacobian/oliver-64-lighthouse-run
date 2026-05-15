@@ -57,6 +57,17 @@ export type Seagull = {
   respawnTimer: number;
 };
 
+export type Crab = {
+  group: THREE.Group;
+  legs: THREE.Mesh[];
+  claws: THREE.Mesh[];
+  start: THREE.Vector3;
+  end: THREE.Vector3;
+  speed: number;
+  direction: 1 | -1;
+  pinchCooldown: number;
+};
+
 export type World = {
   scene: THREE.Scene;
   lighthouse: THREE.Group;
