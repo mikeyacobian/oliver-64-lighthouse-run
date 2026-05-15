@@ -10,8 +10,10 @@ const initialHud: HudState = {
   lives: 3,
   timeLeft: 180,
   zoomFuel: 1,
+  barkReady: true,
+  ringReady: false,
   message: "Collect 5 Nantucket Stars, then reach the lighthouse ring.",
-  mode: "playing",
+  mode: "ready",
 };
 
 export default function App() {
@@ -36,10 +38,14 @@ export default function App() {
     gameRef.current?.restart();
   }, []);
 
+  const startRun = useCallback(() => {
+    gameRef.current?.startRun();
+  }, []);
+
   return (
     <main className="app">
       <div ref={hostRef} className="game-host" aria-label="Oliver 64 game canvas" />
-      <HUD state={hud} onRestart={restart} />
+      <HUD state={hud} onRestart={restart} onStart={startRun} />
     </main>
   );
 }

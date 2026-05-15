@@ -3,9 +3,10 @@ import type { HudState } from "../game/types";
 type HUDProps = {
   state: HudState;
   onRestart: () => void;
+  onStart: () => void;
 };
 
-export function HUD({ state, onRestart }: HUDProps) {
+export function HUD({ state, onRestart, onStart }: HUDProps) {
   const time = Math.max(0, Math.ceil(state.timeLeft));
   const zoomPercent = Math.round(state.zoomFuel * 100);
 
@@ -35,9 +36,32 @@ export function HUD({ state, onRestart }: HUDProps) {
         </div>
       </div>
 
+      <div className="hud__readiness">
+        <Status label="Bark" active={state.barkReady} activeText="Ready" inactiveText="Cooling" />
+        <Status label="Ring" active={state.ringReady} activeText="Glowing" inactiveText="Dim" />
+      </div>
+
       <p className={`hud__message hud__message--${state.mode}`}>{state.message}</p>
 
-      {state.mode !== "playing" && (
+      {state.mode === "ready" && (
+        <div className="hud__overlay">
+          <div className="hud__result hud__result--wide">
+            <h1>Oliver 64: Lighthouse Run</h1>
+            <p>Collect 5 Nantucket Stars, bark at gulls, then sprint for the glowing lighthouse ring.</p>
+            <div className="hud__controls">
+              <span>WASD / Arrows: move</span>
+              <span>Space: jump</span>
+              <span>B: bark</span>
+              <span>Shift / Z: zoomies</span>
+            </div>
+            <button type="button" onClick={onStart}>
+              Start Run
+            </button>
+          </div>
+        </div>
+      )}
+
+      {(state.mode === "won" || state.mode === "lost") && (
         <div className="hud__overlay">
           <div className="hud__result">
             <h1>{state.mode === "won" ? "Lighthouse Saved!" : "Sunset Caught Oliver"}</h1>
@@ -49,6 +73,25 @@ export function HUD({ state, onRestart }: HUDProps) {
         </div>
       )}
     </section>
+  );
+}
+
+function Status({
+  label,
+  active,
+  activeText,
+  inactiveText,
+}: {
+  label: string;
+  active: boolean;
+  activeText: string;
+  inactiveText: string;
+}) {
+  return (
+    <div className={`hud__status ${active ? "hud__status--active" : ""}`}>
+      <span>{label}</span>
+      <strong>{active ? activeText : inactiveText}</strong>
+    </div>
   );
 }
 

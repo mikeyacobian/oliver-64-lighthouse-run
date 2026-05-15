@@ -19,8 +19,11 @@ export function createWorld(): World {
   const waterMaterial = new THREE.MeshStandardMaterial({ color: 0x3e9ec8, flatShading: true, roughness: 0.85 });
   const grassMaterial = new THREE.MeshStandardMaterial({ color: 0x7aa856, flatShading: true, roughness: 0.9 });
   const woodMaterial = new THREE.MeshStandardMaterial({ color: 0x8f5732, flatShading: true, roughness: 0.85 });
+  const ropeMaterial = new THREE.MeshStandardMaterial({ color: 0xd8bb79, flatShading: true, roughness: 0.88 });
   const whiteMaterial = new THREE.MeshStandardMaterial({ color: 0xf7efe0, flatShading: true, roughness: 0.75 });
   const redMaterial = new THREE.MeshStandardMaterial({ color: 0xa52a2a, flatShading: true, roughness: 0.7 });
+  const cranberryMaterial = new THREE.MeshStandardMaterial({ color: 0x7f2633, flatShading: true, roughness: 0.8 });
+  const blueMaterial = new THREE.MeshStandardMaterial({ color: 0x1d6f97, flatShading: true, roughness: 0.7 });
 
   const sand = new THREE.Mesh(new THREE.CylinderGeometry(22, 24, 0.45, 18), sandMaterial);
   sand.receiveShadow = true;
@@ -51,6 +54,55 @@ export function createWorld(): World {
     fence.castShadow = true;
     scene.add(fence);
   }
+
+  for (let i = 0; i < 6; i++) {
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.1, 0.75, 5), woodMaterial);
+    post.position.set(8.5 + i * 0.9, 0.28, 11.2 + Math.sin(i * 0.8) * 0.25);
+    post.castShadow = true;
+    scene.add(post);
+
+    const rope = new THREE.Mesh(new THREE.BoxGeometry(0.82, 0.08, 0.08), ropeMaterial);
+    rope.position.set(8.95 + i * 0.9, 0.54 + Math.sin(i * 0.9) * 0.05, 11.2 + Math.sin(i * 0.8) * 0.25);
+    rope.rotation.y = Math.sin(i * 0.7) * 0.25;
+    rope.castShadow = true;
+    scene.add(rope);
+  }
+
+  for (const [x, z, color] of [
+    [-6.5, 12.2, cranberryMaterial],
+    [-7.25, 11.55, blueMaterial],
+    [-5.8, 11.45, whiteMaterial],
+  ] as const) {
+    const towel = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.05, 1.75), color);
+    towel.position.set(x, 0.02, z);
+    towel.rotation.y = -0.3;
+    towel.receiveShadow = true;
+    scene.add(towel);
+  }
+
+  const umbrella = new THREE.Group();
+  umbrella.position.set(-8.4, 0, 10.4);
+  const umbrellaPole = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.05, 1.6, 5), woodMaterial);
+  umbrellaPole.position.y = 0.78;
+  umbrella.add(umbrellaPole);
+  const umbrellaTop = new THREE.Mesh(new THREE.ConeGeometry(1.0, 0.55, 8), cranberryMaterial);
+  umbrellaTop.position.y = 1.62;
+  umbrellaTop.rotation.y = Math.PI / 8;
+  umbrellaTop.castShadow = true;
+  umbrella.add(umbrellaTop);
+  scene.add(umbrella);
+
+  const sign = new THREE.Group();
+  sign.position.set(2.6, 0, -10.7);
+  const signPost = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1, 0.12), woodMaterial);
+  signPost.position.y = 0.48;
+  sign.add(signPost);
+  const signFace = new THREE.Mesh(new THREE.BoxGeometry(1.25, 0.48, 0.12), woodMaterial);
+  signFace.position.y = 0.98;
+  signFace.rotation.y = -0.25;
+  signFace.castShadow = true;
+  sign.add(signFace);
+  scene.add(sign);
 
   const lighthouse = new THREE.Group();
   lighthouse.position.set(0, 0, -17);

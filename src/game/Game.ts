@@ -68,6 +68,13 @@ export class Game {
     this.loop();
   }
 
+  startRun() {
+    if (this.state.mode !== "ready") return;
+    this.state.mode = "playing";
+    this.state.message = "Find the 5 Nantucket Stars before sunset.";
+    this.onHud({ ...this.state });
+  }
+
   restart() {
     this.state = this.freshState();
     this.controls.reset();
@@ -129,6 +136,9 @@ export class Game {
       this.updateCollectibles(dt);
       this.updateSeagulls(dt);
       this.updateFinish(dt);
+    } else if (this.state.mode === "ready") {
+      this.animateOliver(dt, false, false);
+      this.updateAttractAnimations(dt);
     }
 
     this.updateEffects(dt);
@@ -233,6 +243,21 @@ export class Game {
         }
         this.sparkle(item.group.position, item.kind === "star" ? 10 : 5);
       }
+    }
+  }
+
+  private updateAttractAnimations(dt: number) {
+    for (const item of this.collectibles) {
+      if (item.collected) continue;
+      item.group.rotation.y += dt * 1.2;
+      item.group.position.y = item.baseY + Math.sin(this.animationTime * 0.8 + item.group.position.x) * 0.16;
+    }
+
+    for (const gull of this.seagulls) {
+      gull.wings.forEach((wing, index) => {
+        const side = index === 0 ? -1 : 1;
+        wing.rotation.z = side * (0.24 + Math.sin(this.animationTime * 1.8) * 0.25);
+      });
     }
   }
 
@@ -369,6 +394,8 @@ export class Game {
     this.hudAccumulator += dt;
     if (this.hudAccumulator >= 0.1 || this.state.mode !== "playing") {
       this.hudAccumulator = 0;
+      this.state.barkReady = this.barkCooldown <= 0;
+      this.state.ringReady = this.state.stars === TOTAL_STARS;
       this.onHud({ ...this.state });
     }
   }
@@ -440,8 +467,10 @@ export class Game {
       lives: 3,
       timeLeft: START_TIME,
       zoomFuel: 1,
+      barkReady: true,
+      ringReady: false,
       message: "Collect 5 Nantucket Stars, then reach the lighthouse ring.",
-      mode: "playing",
+      mode: "ready",
     };
   }
 }
