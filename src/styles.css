@@ -131,9 +131,9 @@ button {
 .hud__stats {
   align-self: flex-start;
   display: grid;
-  grid-template-columns: repeat(4, minmax(78px, 1fr));
+  grid-template-columns: repeat(5, minmax(78px, 1fr));
   gap: 8px;
-  width: min(560px, 100%);
+  width: min(700px, 100%);
 }
 
 .hud__stat {
@@ -160,7 +160,7 @@ button {
   font-family: var(--font-display);
   font-variant-numeric: tabular-nums;
   font-weight: 850;
-  font-size: 23px;
+  font-size: clamp(18px, 2vw, 23px);
   line-height: 1;
 }
 
@@ -302,6 +302,28 @@ button {
   font-weight: 850;
 }
 
+.hud__difficulty {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0 0 18px;
+}
+
+.hud__difficultyButton {
+  min-height: 44px;
+  background: rgba(29, 95, 134, 0.72);
+}
+
+.hud__difficultyButton--active {
+  border-color: rgba(255, 237, 131, 0.9);
+  background: rgba(148, 50, 36, 0.92);
+}
+
+.hud__difficultyButton span {
+  display: block;
+  line-height: 1.05;
+}
+
 @media (max-width: 640px) {
   .hud {
     padding: 12px;
@@ -321,6 +343,10 @@ button {
   }
 
   .hud__controls {
+    grid-template-columns: 1fr;
+  }
+
+  .hud__difficulty {
     grid-template-columns: 1fr;
   }
 }

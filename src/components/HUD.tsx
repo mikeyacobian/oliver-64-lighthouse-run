@@ -1,12 +1,19 @@
-import type { HudState } from "../game/types";
+import type { Difficulty, HudState } from "../game/types";
 
 type HUDProps = {
   state: HudState;
   onRestart: () => void;
   onStart: () => void;
+  onDifficultyChange: (difficulty: Difficulty) => void;
 };
 
-export function HUD({ state, onRestart, onStart }: HUDProps) {
+const difficultyLabels: Record<Difficulty, string> = {
+  easy: "Beach Walk",
+  normal: "Nantucket Run",
+  hard: "Storm Watch",
+};
+
+export function HUD({ state, onRestart, onStart, onDifficultyChange }: HUDProps) {
   const time = Math.max(0, Math.ceil(state.timeLeft));
   const zoomPercent = Math.round(state.zoomFuel * 100);
 
@@ -27,6 +34,7 @@ export function HUD({ state, onRestart, onStart }: HUDProps) {
         <Stat label="Stars" value={`${state.stars}/${state.totalStars}`} />
         <Stat label="Lives" value={state.lives.toString()} />
         <Stat label="Timer" value={`${time}s`} />
+        <Stat label="Mode" value={difficultyLabels[state.difficulty]} />
       </div>
 
       <div className="hud__fuel" aria-label={`Zoom fuel ${zoomPercent}%`}>
@@ -53,6 +61,18 @@ export function HUD({ state, onRestart, onStart }: HUDProps) {
               <span>Space: jump</span>
               <span>B: bark</span>
               <span>Shift / Z: zoomies</span>
+            </div>
+            <div className="hud__difficulty" aria-label="Difficulty">
+              {(Object.keys(difficultyLabels) as Difficulty[]).map((difficulty) => (
+                <button
+                  key={difficulty}
+                  className={state.difficulty === difficulty ? "hud__difficultyButton hud__difficultyButton--active" : "hud__difficultyButton"}
+                  type="button"
+                  onClick={() => onDifficultyChange(difficulty)}
+                >
+                  <span>{difficultyLabels[difficulty]}</span>
+                </button>
+              ))}
             </div>
             <button type="button" onClick={onStart}>
               Start Run

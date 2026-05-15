@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { HUD } from "./components/HUD";
 import { Game } from "./game/Game";
-import type { HudState } from "./game/types";
+import type { Difficulty, HudState } from "./game/types";
 
 const initialHud: HudState = {
   score: 0,
@@ -12,6 +12,7 @@ const initialHud: HudState = {
   zoomFuel: 1,
   barkReady: true,
   ringReady: false,
+  difficulty: "normal",
   message: "Collect 5 Nantucket Stars, then reach the lighthouse ring.",
   mode: "ready",
 };
@@ -42,10 +43,14 @@ export default function App() {
     gameRef.current?.startRun();
   }, []);
 
+  const changeDifficulty = useCallback((difficulty: Difficulty) => {
+    gameRef.current?.setDifficulty(difficulty);
+  }, []);
+
   return (
     <main className="app">
       <div ref={hostRef} className="game-host" aria-label="Oliver 64 game canvas" />
-      <HUD state={hud} onRestart={restart} onStart={startRun} />
+      <HUD state={hud} onRestart={restart} onStart={startRun} onDifficultyChange={changeDifficulty} />
     </main>
   );
 }

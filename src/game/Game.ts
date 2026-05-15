@@ -5,13 +5,45 @@ import { createOliver } from "./createOliver";
 import { createSeagulls } from "./createSeagulls";
 import { createWorld } from "./createWorld";
 import { Controls } from "./controls";
-import type { Collectible, Crab, GameMode, HudState, Oliver, Seagull, World } from "./types";
+import type { Collectible, Crab, Difficulty, GameMode, HudState, Oliver, Seagull, World } from "./types";
 
 type HudCallback = (state: HudState) => void;
 
 const TOTAL_STARS = 5;
 const START_TIME = 180;
 const WORLD_RADIUS = 19.5;
+const DIFFICULTY_CONFIG: Record<
+  Difficulty,
+  {
+    crabSpeed: number;
+    gullAttraction: number;
+    gullChaseSpeed: number;
+    gullFleeSpeed: number;
+    gullPatrolSpeed: number;
+  }
+> = {
+  easy: {
+    crabSpeed: 0.75,
+    gullAttraction: 5.1,
+    gullChaseSpeed: 3,
+    gullFleeSpeed: 5.2,
+    gullPatrolSpeed: 0.82,
+  },
+  normal: {
+    crabSpeed: 1,
+    gullAttraction: 6.8,
+    gullChaseSpeed: 3.9,
+    gullFleeSpeed: 5.6,
+    gullPatrolSpeed: 1,
+  },
+  hard: {
+    crabSpeed: 1.32,
+    gullAttraction: 9.1,
+    gullChaseSpeed: 5,
+    gullFleeSpeed: 5.9,
+    gullPatrolSpeed: 1.18,
+  },
+};
 
 export class Game {
   private renderer: THREE.WebGLRenderer;
@@ -80,6 +112,14 @@ export class Game {
     if (this.state.mode !== "ready") return;
     this.state.mode = "playing";
     this.state.message = "Find the 5 Nantucket Stars. Jump over crabs on the beach!";
+    this.onHud({ ...this.state });
+  }
+
+  setDifficulty(difficulty: Difficulty) {
+    this.state.difficulty = difficulty;
+    if (this.state.mode === "ready") {
+      this.state.message = this.difficultyMessage(difficulty);
+    }
     this.onHud({ ...this.state });
   }
 
@@ -284,6 +324,7 @@ export class Game {
   }
 
   private updateCrabs(dt: number) {
+    const config = this.difficultyConfig();
     for (const crab of this.crabs) {
       const target = crab.direction === 1 ? crab.end : crab.start;
       const toTarget = target.clone().sub(crab.group.position);
@@ -293,7 +334,7 @@ export class Game {
 
       const nextTarget = crab.direction === 1 ? crab.end : crab.start;
       const travel = nextTarget.clone().sub(crab.group.position).normalize();
-      crab.group.position.addScaledVector(travel, crab.speed * dt);
+      crab.group.position.addScaledVector(travel, crab.speed * config.crabSpeed * dt);
       this.faceCrabSideways(crab, travel);
       crab.pinchCooldown = Math.max(0, crab.pinchCooldown - dt);
       this.animateCrab(crab, dt, 1);
@@ -336,6 +377,7 @@ export class Game {
 
   private updateSeagulls(dt: number) {
     const oliverPos = this.oliver.group.position;
+    const config = this.difficultyConfig();
     for (const gull of this.seagulls) {
       if (gull.state === "respawn") {
         this.updateRespawningGull(gull, dt);
@@ -349,18 +391,18 @@ export class Game {
       gull.bonkCooldown = Math.max(0, gull.bonkCooldown - dt);
       if (gull.fleeTimer > 0) {
         gull.state = "flee";
-      } else if (distance < 6.8) {
+      } else if (distance < config.gullAttraction) {
         gull.state = "chase";
       } else {
         gull.state = "patrol";
       }
 
       if (gull.state === "patrol") {
-        this.updatePatrolGull(gull, dt, 1, false);
+        this.updatePatrolGull(gull, dt, config.gullPatrolSpeed, false);
       } else if (gull.state === "chase") {
-        gull.velocity.copy(this.flatDirection(oliverPos, gull.group.position).multiplyScalar(3.9));
+        gull.velocity.copy(this.flatDirection(oliverPos, gull.group.position).multiplyScalar(config.gullChaseSpeed));
       } else {
-        gull.velocity.copy(this.flatDirection(gull.group.position, oliverPos).multiplyScalar(5.6));
+        gull.velocity.copy(this.flatDirection(gull.group.position, oliverPos).multiplyScalar(config.gullFleeSpeed));
       }
 
       gull.group.position.addScaledVector(gull.velocity, dt);
@@ -653,8 +695,19 @@ export class Game {
       zoomFuel: 1,
       barkReady: true,
       ringReady: false,
+      difficulty: this.state?.difficulty ?? "normal",
       message: "Collect 5 Nantucket Stars, then reach the lighthouse ring.",
       mode: "ready",
     };
+  }
+
+  private difficultyConfig() {
+    return DIFFICULTY_CONFIG[this.state.difficulty];
+  }
+
+  private difficultyMessage(difficulty: Difficulty) {
+    if (difficulty === "easy") return "Beach Walk: slower crabs and gulls, smaller gull chase range.";
+    if (difficulty === "hard") return "Storm Watch: faster crabs, faster gulls, and a wider gull chase range.";
+    return "Nantucket Run: balanced crab speed and gull pressure.";
   }
 }

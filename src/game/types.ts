@@ -1,6 +1,7 @@
 import type * as THREE from "three";
 
 export type GameMode = "ready" | "playing" | "won" | "lost";
+export type Difficulty = "easy" | "normal" | "hard";
 
 export type HudState = {
   score: number;
@@ -11,6 +12,7 @@ export type HudState = {
   zoomFuel: number;
   barkReady: boolean;
   ringReady: boolean;
+  difficulty: Difficulty;
   message: string;
   mode: GameMode;
 };
