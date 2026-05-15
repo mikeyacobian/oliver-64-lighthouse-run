@@ -292,8 +292,9 @@ export class Game {
       }
 
       const nextTarget = crab.direction === 1 ? crab.end : crab.start;
-      crab.group.position.addScaledVector(nextTarget.clone().sub(crab.group.position).normalize(), crab.speed * dt);
-      crab.group.lookAt(nextTarget.x, crab.group.position.y, nextTarget.z);
+      const travel = nextTarget.clone().sub(crab.group.position).normalize();
+      crab.group.position.addScaledVector(travel, crab.speed * dt);
+      this.faceCrabSideways(crab, travel);
       crab.pinchCooldown = Math.max(0, crab.pinchCooldown - dt);
       this.animateCrab(crab, dt, 1);
 
@@ -309,13 +310,18 @@ export class Game {
     const scuttle = Math.sin(this.animationTime * 1.7 + crab.group.position.x) * intensity;
     crab.legs.forEach((leg, index) => {
       const side = index % 2 === 0 ? 1 : -1;
-      leg.rotation.y = side * scuttle * 0.36;
+      leg.rotation.y = side * scuttle * 0.42;
     });
     crab.claws.forEach((claw, index) => {
       const side = index === 0 ? -1 : 1;
       claw.rotation.z = side * (0.28 + Math.abs(scuttle) * 0.34);
     });
     crab.group.position.y = 0.16 + Math.abs(scuttle) * 0.025;
+  }
+
+  private faceCrabSideways(crab: Crab, travel: THREE.Vector3) {
+    const sidewaysFacing = Math.atan2(travel.x, travel.z) + Math.PI / 2;
+    crab.group.rotation.y = sidewaysFacing;
   }
 
   private pinchOliver(crab: Crab) {
