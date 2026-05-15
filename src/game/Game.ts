@@ -97,9 +97,10 @@ export class Game {
       item.group.position.y = item.baseY;
     });
     this.seagulls.forEach((gull, index) => {
-      gull.group.position.copy(gull.patrolCenter);
+      const angle = index * 1.9;
+      gull.group.position.copy(this.patrolTarget(gull, angle));
       gull.velocity.set(0, 0, 0);
-      gull.patrolAngle = index * 1.9;
+      gull.patrolAngle = angle;
       gull.state = "patrol";
       gull.fleeTimer = 0;
       gull.bonkCooldown = 0;
@@ -262,10 +263,9 @@ export class Game {
     }
 
     for (const gull of this.seagulls) {
-      gull.wings.forEach((wing, index) => {
-        const side = index === 0 ? -1 : 1;
-        wing.rotation.z = side * (0.24 + Math.sin(this.animationTime * 1.8) * 0.25);
-      });
+      this.updatePatrolGull(gull, dt, 0.7, true);
+      gull.group.position.y = THREE.MathUtils.clamp(gull.group.position.y, 1.05, 2.7);
+      this.animateGullWings(gull, 0.32);
     }
   }
 
@@ -291,25 +291,18 @@ export class Game {
       }
 
       if (gull.state === "patrol") {
-        gull.patrolAngle += dt * 0.75;
-        const target = gull.patrolCenter
-          .clone()
-          .add(new THREE.Vector3(Math.cos(gull.patrolAngle) * 2.5, Math.sin(gull.patrolAngle * 2) * 0.25, Math.sin(gull.patrolAngle) * 2.5));
-        gull.velocity.subVectors(target, gull.group.position).multiplyScalar(0.85);
+        this.updatePatrolGull(gull, dt, 1, false);
       } else if (gull.state === "chase") {
-        gull.velocity.copy(toOliver.normalize().multiplyScalar(3.2));
+        gull.velocity.copy(this.flatDirection(oliverPos, gull.group.position).multiplyScalar(3.9));
       } else {
-        gull.velocity.copy(toOliver.normalize().multiplyScalar(-5.2));
+        gull.velocity.copy(this.flatDirection(gull.group.position, oliverPos).multiplyScalar(5.6));
       }
 
       gull.group.position.addScaledVector(gull.velocity, dt);
       gull.group.position.y = THREE.MathUtils.clamp(gull.group.position.y, 1.05, 2.7);
       this.keepOnIsland(gull.group.position, 17);
       gull.group.lookAt(oliverPos.x, gull.group.position.y, oliverPos.z);
-      gull.wings.forEach((wing, index) => {
-        const side = index === 0 ? -1 : 1;
-        wing.rotation.z = side * (0.24 + Math.sin(this.animationTime * 1.8) * 0.45);
-      });
+      this.animateGullWings(gull, 0.45);
 
       const contactDistance = this.flatDistance(gull.group.position, oliverPos);
       if (contactDistance < 0.92 && gull.bonkCooldown <= 0 && this.invulnerableTimer <= 0) {
@@ -317,6 +310,27 @@ export class Game {
         this.bonkOliver(gull);
       }
     }
+  }
+
+  private updatePatrolGull(gull: Seagull, dt: number, speedScale: number, shouldMove: boolean) {
+    gull.patrolAngle += dt * 0.9 * speedScale;
+    const target = this.patrolTarget(gull, gull.patrolAngle);
+    gull.velocity.subVectors(target, gull.group.position).multiplyScalar(1.35 * speedScale);
+    if (shouldMove) {
+      gull.group.position.addScaledVector(gull.velocity, dt);
+    }
+    gull.group.lookAt(target.x, gull.group.position.y, target.z);
+  }
+
+  private patrolTarget(gull: Seagull, angle: number) {
+    return gull.patrolCenter.clone().add(new THREE.Vector3(Math.cos(angle) * 2.6, Math.sin(angle * 2) * 0.28, Math.sin(angle) * 2.6));
+  }
+
+  private animateGullWings(gull: Seagull, intensity: number) {
+    gull.wings.forEach((wing, index) => {
+      const side = index === 0 ? -1 : 1;
+      wing.rotation.z = side * (0.24 + Math.sin(this.animationTime * 1.8) * intensity);
+    });
   }
 
   private updateFinish(dt: number) {
