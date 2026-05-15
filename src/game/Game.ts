@@ -298,7 +298,8 @@ export class Game {
         wing.rotation.z = side * (0.24 + Math.sin(this.animationTime * 1.8) * 0.45);
       });
 
-      if (distance < 1.05 && gull.bonkCooldown <= 0 && this.invulnerableTimer <= 0) {
+      const contactDistance = this.flatDistance(gull.group.position, oliverPos);
+      if (contactDistance < 0.92 && gull.bonkCooldown <= 0 && this.invulnerableTimer <= 0) {
         gull.bonkCooldown = 1.4;
         this.bonkOliver(gull);
       }
@@ -346,7 +347,7 @@ export class Game {
   private bonkOliver(gull: Seagull) {
     this.state.lives -= 1;
     this.invulnerableTimer = 1.2;
-    const away = this.oliver.group.position.clone().sub(gull.group.position).normalize();
+    const away = this.flatDirection(this.oliver.group.position, gull.group.position);
     this.oliver.group.position.addScaledVector(away, 1.15);
     this.state.message = this.state.lives > 0 ? "Bonked by a seagull. Bark to scare them off!" : "Oliver ran out of lives.";
     if (this.state.lives <= 0) this.lose("Oliver was bonked one too many times by the Nantucket gull squad.");
@@ -431,6 +432,18 @@ export class Game {
       position.x = flat.x;
       position.z = flat.y;
     }
+  }
+
+  private flatDistance(a: THREE.Vector3, b: THREE.Vector3) {
+    return Math.hypot(a.x - b.x, a.z - b.z);
+  }
+
+  private flatDirection(from: THREE.Vector3, to: THREE.Vector3) {
+    const direction = new THREE.Vector3(from.x - to.x, 0, from.z - to.z);
+    if (direction.lengthSq() < 0.0001) {
+      return new THREE.Vector3(0, 0, 1).applyQuaternion(this.oliver.group.quaternion);
+    }
+    return direction.normalize();
   }
 
   private resize() {
